@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Screen Portal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; height: 100vh; }
+
+  /* Start screen */
+  #start-screen {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100vh; gap: 16px;
+  }
+  #start-screen h1 { font-size: 24px; font-weight: 500; }
+  #start-screen p { color: #888; font-size: 14px; max-width: 400px; text-align: center; }
+  button {
+    padding: 10px 24px; border: none; border-radius: 6px; font-size: 14px;
+    cursor: pointer; background: #3b82f6; color: #fff; font-weight: 500;
+  }
+  button:hover { background: #2563eb; }
+
+  /* Setup screen */
+  #setup-screen { display: none; position: relative; height: 100vh; }
+  #preview-video {
+    position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 48px);
+    object-fit: contain; background: #000;
+  }
+  #selection-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 48px);
+    cursor: crosshair;
+  }
+  #selection-rect {
+    position: absolute; border: 2px solid #3b82f6; background: rgba(59,130,246,0.08);
+    display: none; pointer-events: none;
+  }
+  .handle {
+    position: absolute; width: 10px; height: 10px; background: #3b82f6; border-radius: 2px;
+    pointer-events: auto;
+  }
+  .handle.tl { top: -5px; left: -5px; cursor: nw-resize; }
+  .handle.tr { top: -5px; right: -5px; cursor: ne-resize; }
+  .handle.bl { bottom: -5px; left: -5px; cursor: sw-resize; }
+  .handle.br { bottom: -5px; right: -5px; cursor: se-resize; }
+  .handle.move { top: 0; left: 0; width: 100%; height: 100%; background: transparent; cursor: move; border-radius: 0; }
+
+  #setup-toolbar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 48px;
+    background: #111; display: flex; align-items: center; justify-content: center; gap: 12px;
+  }
+  #setup-toolbar span { color: #888; font-size: 13px; }
+  #lock-btn { display: none; }
+
+  /* Live portal */
+  #portal-screen { display: none; height: 100vh; position: relative; background: #000; }
+  #portal-canvas { width: 100%; height: 100%; object-fit: contain; }
+  #portal-toolbar {
+    position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity 0.2s;
+  }
+  #portal-screen:hover #portal-toolbar { opacity: 1; }
+  #portal-toolbar button { background: rgba(0,0,0,0.6); font-size: 12px; padding: 6px 12px; }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>Screen Portal</h1>
+  <p>Capture your screen, select a region, and share just that area as a Chrome tab in Google Meet.</p>
+  <button id="start-btn">Start Screen Capture</button>
+</div>
+
+<div id="setup-screen">
+  <video id="preview-video" autoplay muted></video>
+  <div id="selection-overlay"></div>
+  <div id="selection-rect">
+    <div class="handle move"></div>
+    <div class="handle tl"></div>
+    <div class="handle tr"></div>
+    <div class="handle bl"></div>
+    <div class="handle br"></div>
+  </div>
+  <div id="setup-toolbar">
+    <span>Draw a rectangle over the area you want to share</span>
+    <button id="lock-btn">Lock &amp; Portal</button>
+    <button id="cancel-btn" style="background:#444">Cancel</button>
+  </div>
+</div>
+
+<div id="portal-screen">
+  <canvas id="portal-canvas"></canvas>
+  <div id="portal-toolbar">
+    <button id="adjust-btn">Adjust</button>
+    <button id="stop-btn" style="background:#444; margin-left:4px">Stop</button>
+  </div>
+</div>
+
+<script src="portal.js"></script>
+</body>
+</html>

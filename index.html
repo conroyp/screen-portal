@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Screen Portal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; height: 100vh; }
+
+  /* Start screen */
+  #start-screen {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100vh; gap: 16px;
+  }
+  #start-screen h1 { font-size: 24px; font-weight: 500; }
+  #start-screen p { color: #888; font-size: 14px; max-width: 400px; text-align: center; }
+  button {
+    padding: 10px 24px; border: none; border-radius: 6px; font-size: 14px;
+    cursor: pointer; background: #3b82f6; color: #fff; font-weight: 500;
+  }
+  button:hover { background: #2563eb; }
+
+  /* Setup screen - selecting the crop region */
+  #setup-screen { display: none; position: relative; height: 100vh; }
+  #preview-video {
+    position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 48px);
+    object-fit: contain; background: #000;
+  }
+  #selection-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 48px);
+    cursor: crosshair;
+  }
+  #selection-rect {
+    position: absolute; border: 2px solid #3b82f6; background: rgba(59,130,246,0.08);
+    display: none; pointer-events: none;
+  }
+  /* Handles for resizing */
+  .handle {
+    position: absolute; width: 10px; height: 10px; background: #3b82f6; border-radius: 2px;
+    pointer-events: auto;
+  }
+  .handle.tl { top: -5px; left: -5px; cursor: nw-resize; }
+  .handle.tr { top: -5px; right: -5px; cursor: ne-resize; }
+  .handle.bl { bottom: -5px; left: -5px; cursor: sw-resize; }
+  .handle.br { bottom: -5px; right: -5px; cursor: se-resize; }
+  .handle.move { top: 0; left: 0; width: 100%; height: 100%; background: transparent; cursor: move; border-radius: 0; }
+
+  #setup-toolbar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 48px;
+    background: #111; display: flex; align-items: center; justify-content: center; gap: 12px;
+  }
+  #setup-toolbar span { color: #888; font-size: 13px; }
+  #lock-btn { display: none; }
+
+  /* Live portal */
+  #portal-screen { display: none; height: 100vh; position: relative; background: #000; }
+  #portal-canvas { width: 100%; height: 100%; object-fit: contain; }
+  #portal-toolbar {
+    position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity 0.2s;
+  }
+  #portal-screen:hover #portal-toolbar { opacity: 1; }
+  #portal-toolbar button { background: rgba(0,0,0,0.6); font-size: 12px; padding: 6px 12px; }
+</style>
+</head>
+<body>
+
+<!-- Screen 1: Start -->
+<div id="start-screen">
+  <h1>Screen Portal</h1>
+  <p>Capture your screen, select a region, and share just that area as a Chrome tab in Google Meet.</p>
+  <button onclick="startCapture()">Start Screen Capture</button>
+</div>
+
+<!-- Screen 2: Select region -->
+<div id="setup-screen">
+  <video id="preview-video" autoplay muted></video>
+  <div id="selection-overlay"></div>
+  <div id="selection-rect">
+    <div class="handle move"></div>
+    <div class="handle tl"></div>
+    <div class="handle tr"></div>
+    <div class="handle bl"></div>
+    <div class="handle br"></div>
+  </div>
+  <div id="setup-toolbar">
+    <span>Draw a rectangle over the area you want to share</span>
+    <button id="lock-btn" onclick="lockRegion()">Lock &amp; Portal</button>
+    <button onclick="stopCapture()" style="background:#444">Cancel</button>
+  </div>
+</div>
+
+<!-- Screen 3: Live portal -->
+<div id="portal-screen">
+  <canvas id="portal-canvas"></canvas>
+  <div id="portal-toolbar">
+    <button onclick="adjustRegion()">Adjust</button>
+    <button onclick="stopCapture()" style="background:#444; margin-left:4px">Stop</button>
+  </div>
+</div>
+
+<script>
+let stream = null;
+const video = document.getElementById('preview-video');
+const overlay = document.getElementById('selection-overlay');
+const rect = document.getElementById('selection-rect');
+const canvas = document.getElementById('portal-canvas');
+const ctx = canvas.getContext('2d');
+
+// Selection state (in overlay-relative pixels)
+let sel = { x: 0, y: 0, w: 0, h: 0 };
+let drawing = false, dragType = null, dragStart = {};
+let animFrame = null;
+
+async function startCapture() {
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    video.srcObject = stream;
+    stream.getVideoTracks()[0].addEventListener('ended', stopCapture);
+    show('setup-screen');
+    rect.style.display = 'none';
+    document.getElementById('lock-btn').style.display = 'none';
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function stopCapture() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  video.srcObject = null;
+  show('start-screen');
+}
+
+function show(id) {
+  ['start-screen','setup-screen','portal-screen'].forEach(s => {
+    if (s === 'setup-screen') {
+      // When portal is active, hide setup visually but keep video decoding frames
+      if (id === 'portal-screen') {
+        document.getElementById(s).style.position = 'absolute';
+        document.getElementById(s).style.width = '1px';
+        document.getElementById(s).style.height = '1px';
+        document.getElementById(s).style.overflow = 'hidden';
+        document.getElementById(s).style.opacity = '0';
+        document.getElementById(s).style.pointerEvents = 'none';
+      } else {
+        document.getElementById(s).style.position = '';
+        document.getElementById(s).style.width = '';
+        document.getElementById(s).style.height = '';
+        document.getElementById(s).style.overflow = '';
+        document.getElementById(s).style.opacity = '';
+        document.getElementById(s).style.pointerEvents = '';
+        document.getElementById(s).style.display = s === id ? 'block' : 'none';
+      }
+    } else {
+      document.getElementById(s).style.display = s === id ? (s === 'portal-screen' ? 'block' : 'flex') : 'none';
+    }
+  });
+}
+
+// --- Drawing / moving the selection rectangle ---
+
+overlay.addEventListener('mousedown', (e) => {
+  const r = overlay.getBoundingClientRect();
+  sel = { x: e.clientX - r.left, y: e.clientY - r.top, w: 0, h: 0 };
+  drawing = true;
+  rect.style.display = 'block';
+  rect.style.pointerEvents = 'none'; // disable handles while drawing
+  updateRect();
+
+  const onMove = (ev) => {
+    if (!drawing) return;
+    const r = overlay.getBoundingClientRect();
+    sel.w = (ev.clientX - r.left) - sel.x;
+    sel.h = (ev.clientY - r.top) - sel.y;
+    updateRect();
+  };
+  const onUp = () => {
+    drawing = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    normalizeSel();
+    if (sel.w > 20 && sel.h > 20) {
+      document.getElementById('lock-btn').style.display = 'inline-block';
+      enableHandles();
+    }
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+});
+
+// Handle dragging (move + resize)
+rect.addEventListener('mousedown', (e) => {
+  if (drawing) return;
+  const cls = e.target.classList;
+  if (cls.contains('move')) dragType = 'move';
+  else if (cls.contains('tl')) dragType = 'tl';
+  else if (cls.contains('tr')) dragType = 'tr';
+  else if (cls.contains('bl')) dragType = 'bl';
+  else if (cls.contains('br')) dragType = 'br';
+  else return;
+  e.stopPropagation();
+  dragStart = { mx: e.clientX, my: e.clientY, ...sel };
+  const onMove = (ev) => {
+    const dx = ev.clientX - dragStart.mx, dy = ev.clientY - dragStart.my;
+    if (dragType === 'move') {
+      sel.x = dragStart.x + dx; sel.y = dragStart.y + dy;
+    } else if (dragType === 'br') {
+      sel.w = dragStart.w + dx; sel.h = dragStart.h + dy;
+    } else if (dragType === 'tl') {
+      sel.x = dragStart.x + dx; sel.y = dragStart.y + dy;
+      sel.w = dragStart.w - dx; sel.h = dragStart.h - dy;
+    } else if (dragType === 'tr') {
+      sel.y = dragStart.y + dy;
+      sel.w = dragStart.w + dx; sel.h = dragStart.h - dy;
+    } else if (dragType === 'bl') {
+      sel.x = dragStart.x + dx;
+      sel.w = dragStart.w - dx; sel.h = dragStart.h + dy;
+    }
+    updateRect();
+  };
+  const onUp = () => {
+    dragType = null; normalizeSel();
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+});
+
+function normalizeSel() {
+  if (sel.w < 0) { sel.x += sel.w; sel.w = -sel.w; }
+  if (sel.h < 0) { sel.y += sel.h; sel.h = -sel.h; }
+}
+
+function updateRect() {
+  const x = sel.w >= 0 ? sel.x : sel.x + sel.w;
+  const y = sel.h >= 0 ? sel.y : sel.y + sel.h;
+  rect.style.left = x + 'px'; rect.style.top = y + 'px';
+  rect.style.width = Math.abs(sel.w) + 'px'; rect.style.height = Math.abs(sel.h) + 'px';
+}
+
+function enableHandles() {
+  rect.style.pointerEvents = 'auto';
+}
+
+// --- Lock and render portal ---
+
+function lockRegion() {
+  // Convert overlay-pixel selection → source video pixel coords
+  const vRect = video.getBoundingClientRect();
+  const oRect = overlay.getBoundingClientRect();
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  // The video is object-fit:contain inside oRect, so find the rendered region
+  const scale = Math.min(oRect.width / vw, oRect.height / vh);
+  const rw = vw * scale, rh = vh * scale;
+  const rx = (oRect.width - rw) / 2, ry = (oRect.height - rh) / 2;
+
+  // Map selection to video source coords
+  const sx = Math.max(0, (sel.x - rx) / scale);
+  const sy = Math.max(0, (sel.y - ry) / scale);
+  const sw = Math.min(vw - sx, sel.w / scale);
+  const sh = Math.min(vh - sy, sel.h / scale);
+
+  show('portal-screen');
+  renderPortal(sx, sy, sw, sh);
+}
+
+function renderPortal(sx, sy, sw, sh) {
+  // Set canvas resolution to match source region for sharpness
+  canvas.width = Math.round(sw);
+  canvas.height = Math.round(sh);
+
+  function draw() {
+    if (!stream) return;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    animFrame = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function adjustRegion() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  show('setup-screen');
+}
+</script>
+</body>
+</html>
