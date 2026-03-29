@@ -20,7 +20,9 @@ Share the tab in Google Meet (or Zoom, Teams, etc.) and your audience sees exact
 
 ### Chrome Extension (recommended)
 
-You can load the extension directly:
+Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/screen-portal/oiifckigklhfkdbhekcbmobjaalhndmg), click the extension icon, and you're ready to go.
+
+If you can't install from the store (e.g. managed Chrome policies), you can load the extension directly:
 
 1. Clone this repo
 2. Open `chrome://extensions` in Chrome
